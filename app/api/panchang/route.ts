@@ -141,7 +141,8 @@ export async function GET() {
       currentHora: currentHora?.lord ?? null,
     });
   } catch (error) {
-    console.error("Panchang API error:", error);
-    return NextResponse.json({ error: "Failed to fetch panchang" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Panchang API error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
