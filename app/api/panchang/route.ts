@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
 
-const ASTRO_API_BASE = "https://json.freeastrologyapi.com";
+export const dynamic = "force-dynamic";
 
-// Temple location: Suwanee, GA
+const ASTRO_API_BASE = "https://json.freeastrologyapi.com";
 const TEMPLE_LAT = 34.0535;
 const TEMPLE_LON = -84.0711;
 const TEMPLE_TZ = "America/New_York";
 
-if (!process.env.ASTRO_API_KEY) {
-  throw new Error("ASTRO_API_KEY environment variable is not set");
-}
+const SIGNS = [
+  "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+  "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
+];
 
-const ASTRO_API_KEY = process.env.ASTRO_API_KEY;
+type HoraEntry = { lord: string; starts_at: string; ends_at: string };
+type PlanetEntry = { name: string; current_sign: number };
 
-/** Returns date/time parts in the temple's local timezone (ET). */
+/** Returns ET date/time parts using Intl — works correctly regardless of server timezone. */
 function getETTimeParts(now: Date) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
@@ -40,15 +42,16 @@ function getETTimeParts(now: Date) {
   };
 }
 
-/** Returns the current UTC offset for ET (-4 EDT or -5 EST). */
+/** Returns the current UTC offset for ET using Intl (-4 EDT or -5 EST). */
 function getETOffset(now: Date): number {
-  const etMs = new Date(
-    now.toLocaleString("en-US", { timeZone: TEMPLE_TZ })
-  ).getTime();
-  const utcMs = new Date(
-    now.toLocaleString("en-US", { timeZone: "UTC" })
-  ).getTime();
-  return Math.round((etMs - utcMs) / (1000 * 60 * 60));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: TEMPLE_TZ,
+    timeZoneName: "shortOffset",
+  }).formatToParts(now);
+
+  const tzName = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-5";
+  const match = tzName.match(/GMT([+-]\d+)/);
+  return match ? parseInt(match[1]) : -5;
 }
 
 function buildPayload(now: Date) {
@@ -61,16 +64,18 @@ function buildPayload(now: Date) {
   };
 }
 
-async function fetchAstro(endpoint: string, payload: object) {
+async function fetchAstro(endpoint: string, payload: object, apiKey: string) {
   const res = await fetch(`${ASTRO_API_BASE}/${endpoint}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": ASTRO_API_KEY,
+      "x-api-key": apiKey,
     },
     body: JSON.stringify(payload),
-    next: { revalidate: 3600 },
   });
+
+  if (!res.ok) throw new Error(`${endpoint} HTTP ${res.status}`);
+
   const data = await res.json();
   if (data.statusCode !== 200) throw new Error(`${endpoint} failed: ${data.message}`);
   return typeof data.output === "string" ? JSON.parse(data.output) : data.output;
@@ -85,27 +90,25 @@ function formatTime(isoString: string): string {
   });
 }
 
-const SIGNS = [
-  "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
-  "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
-];
-
-type HoraEntry = { lord: string; starts_at: string; ends_at: string };
-type PlanetEntry = { name: string; current_sign: number };
-
 export async function GET() {
+  const apiKey = process.env.ASTRO_API_KEY;
+  if (!apiKey) {
+    console.error("ASTRO_API_KEY is not set");
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+
   try {
     const now = new Date();
     const payload = buildPayload(now);
 
     const [rahuKalam, yamaGandam, gulikaKalam, amritKaal, horaTimings, planets] =
       await Promise.all([
-        fetchAstro("rahu-kalam", payload),
-        fetchAstro("yama-gandam", payload),
-        fetchAstro("gulika-kalam", payload),
-        fetchAstro("amrit-kaal", payload),
-        fetchAstro("hora-timings", payload),
-        fetchAstro("planets", payload),
+        fetchAstro("rahu-kalam", payload, apiKey),
+        fetchAstro("yama-gandam", payload, apiKey),
+        fetchAstro("gulika-kalam", payload, apiKey),
+        fetchAstro("amrit-kaal", payload, apiKey),
+        fetchAstro("hora-timings", payload, apiKey),
+        fetchAstro("planets", payload, apiKey),
       ]);
 
     const moonPlanet = Object.values(planets as Record<string, PlanetEntry>).find(
