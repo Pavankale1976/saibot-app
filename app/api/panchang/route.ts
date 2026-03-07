@@ -101,15 +101,13 @@ export async function GET() {
     const now = new Date();
     const payload = buildPayload(now);
 
-    const [rahuKalam, yamaGandam, gulikaKalam, amritKaal, horaTimings, planets] =
-      await Promise.all([
-        fetchAstro("rahu-kalam", payload, apiKey),
-        fetchAstro("yama-gandam", payload, apiKey),
-        fetchAstro("gulika-kalam", payload, apiKey),
-        fetchAstro("amrit-kaal", payload, apiKey),
-        fetchAstro("hora-timings", payload, apiKey),
-        fetchAstro("planets", payload, apiKey),
-      ]);
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const rahuKalam   = await fetchAstro("rahu-kalam",   payload, apiKey); await delay(300);
+    const yamaGandam  = await fetchAstro("yama-gandam",  payload, apiKey); await delay(300);
+    const gulikaKalam = await fetchAstro("gulika-kalam", payload, apiKey); await delay(300);
+    const amritKaal   = await fetchAstro("amrit-kaal",   payload, apiKey); await delay(300);
+    const horaTimings = await fetchAstro("hora-timings", payload, apiKey); await delay(300);
+    const planets     = await fetchAstro("planets",      payload, apiKey);
 
     const moonPlanet = Object.values(planets as Record<string, PlanetEntry>).find(
       (p) => p.name === "Moon"
