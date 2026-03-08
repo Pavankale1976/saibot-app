@@ -1,0 +1,49 @@
+graph TB
+    subgraph Browser["Browser (Visitor)"]
+        UI["Page UI\npage.tsx"]
+        CW["ChatWidget.tsx\nChat Interface"]
+        PW["PanchangWidget.tsx\nDaily Panchang"]
+    end
+
+    subgraph Netlify["Netlify (saibot-app.netlify.app)"]
+        subgraph NextJS["Next.js App Router"]
+            CHAT["/api/chat\nPOST"]
+            PANCH["/api/panchang\nGET"]
+        end
+
+        subgraph Knowledge["Knowledge Base (/knowledge)"]
+            KT["temple-hours.ts"]
+            KD["daily-services.ts"]
+            KR["recurring-services.ts"]
+            KW["weekly-programs.ts"]
+            KC["contacts.ts"]
+            KE["events-mar/apr/may-2026.ts"]
+        end
+    end
+
+    subgraph External["External APIs"]
+        CLAUDE["Anthropic Claude API\nclaude-haiku-4-5"]
+        ASTRO["Free Astrology API\nfreeastrologyapi.com\nRahu Kalam · Yama Gandam\nGulika Kalam · Amrit Kaal\nHora · Planets"]
+    end
+
+    subgraph Env["Environment Variables"]
+        K1["ANTHROPIC_API_KEY"]
+        K2["ASTRO_API_KEY"]
+    end
+
+    UI --> CW
+    UI --> PW
+    CW -->|"User message"| CHAT
+    PW -->|"GET daily data"| PANCH
+
+    Knowledge --> CHAT
+    CHAT -->|"System prompt +\nconversation"| CLAUDE
+    CLAUDE -->|"AI response"| CHAT
+    CHAT -->|"Assistant reply"| CW
+
+    PANCH -->|"Sequential calls\n300ms delay"| ASTRO
+    ASTRO -->|"Timing data"| PANCH
+    PANCH -->|"Formatted panchang"| PW
+
+    K1 -.->|"injected"| CHAT
+    K2 -.->|"injected"| PANCH
