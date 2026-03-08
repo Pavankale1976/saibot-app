@@ -15,6 +15,30 @@ const SUGGESTED_QUESTIONS = [
   "How can I donate or sponsor a puja?",
 ];
 
+// Extend Window for SpeechRecognition cross-browser support
+interface ISpeechRecognition extends EventTarget {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  start(): void;
+  stop(): void;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((e: Event) => void) | null;
+  onresult: ((e: SpeechRecognitionEvent) => void) | null;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition: new () => ISpeechRecognition;
+    webkitSpeechRecognition: new () => ISpeechRecognition;
+  }
+}
+
 export default function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -25,11 +49,55 @@ export default function ChatWidget() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [micSupported, setMicSupported] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<ISpeechRecognition | null>(null);
+
+  useEffect(() => {
+    const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    setMicSupported(!!SR);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  function toggleListening() {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!SR) return;
+
+    const recognition: ISpeechRecognition = new SR();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognitionRef.current = recognition;
+
+    recognition.onstart = () => setListening(true);
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = Array.from(event.results)
+        .map((r) => r[0].transcript)
+        .join("");
+      setInput(transcript);
+
+      // Auto-send on final result
+      if (event.results[event.results.length - 1].isFinal) {
+        recognition.stop();
+        sendMessage(transcript);
+      }
+    };
+
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
+
+    recognition.start();
+  }
 
   async function sendMessage(text: string) {
     if (!text.trim() || loading) return;
@@ -126,7 +194,7 @@ export default function ChatWidget() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Suggested questions (only show when only the greeting is present) */}
+      {/* Suggested questions */}
       {messages.length === 1 && (
         <div className="px-4 pb-2 flex flex-wrap gap-2">
           {SUGGESTED_QUESTIONS.map((q) => (
@@ -148,10 +216,32 @@ export default function ChatWidget() {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your question..."
+            placeholder={listening ? "Listening..." : "Type your question..."}
             disabled={loading}
-            className="flex-1 border border-orange-200 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-50 bg-orange-50 placeholder-orange-300"
+            className={`flex-1 border rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-50 bg-orange-50 placeholder-orange-300 transition-colors ${
+              listening ? "border-red-400 bg-red-50" : "border-orange-200"
+            }`}
           />
+
+          {micSupported && (
+            <button
+              type="button"
+              onClick={toggleListening}
+              disabled={loading}
+              title={listening ? "Stop listening" : "Speak your question"}
+              className={`rounded-full w-10 h-10 flex items-center justify-center transition-colors disabled:opacity-50 shrink-0 ${
+                listening
+                  ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                  : "bg-orange-100 hover:bg-orange-200 text-orange-700"
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
+                <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
+              </svg>
+            </button>
+          )}
+
           <button
             type="submit"
             disabled={loading || !input.trim()}
